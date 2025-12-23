@@ -11,7 +11,7 @@ st.set_page_config(page_title="Generator BDO - Elite Waste", page_icon="♻️")
 
 st.title("♻️ Generator Pełnomocnictw BDO")
 st.markdown("### Elite Waste")
-st.info("Wpisz NIP klienta poniżej. System sprawdzi różne formaty danych w GUS.")
+st.info("Wpisz NIP klienta poniżej. System obsługuje zarówno spółki (KRS) jak i JDG (CEIDG).")
 
 # --- POBIERANIE KLUCZA ---
 try:
@@ -20,38 +20,48 @@ except Exception as e:
     st.error("⚠️ Błąd konfiguracji! Nie znaleziono klucza GUS_KEY w zakładce Secrets.")
     st.stop()
 
-# --- FUNKCJA NAPRAWCZA DO DANYCH (Mocne mapowanie) ---
+# --- INTELIGENTNE WYCIĄGANIE DANYCH ---
 def wyciagnij_dane_smart(dane):
     """
-    Funkcja szuka danych w różnych polach, bo GUS inaczej nazywa pola dla JDG a inaczej dla Spółek.
+    Funkcja mapuje dziwne nazwy pól z GUS (widoczne na zrzutach ekranu) na nasze standardowe.
     """
     # 1. NAZWA
     nazwa = dane.get('nazwa', '')
-    if not nazwa:
-        # Czasem nazwa jest rozbita na imię i nazwisko w JDG
-        imie = dane.get('imie1', '')
-        nazwisko = dane.get('nazwisko', '')
-        if imie and nazwisko:
-            nazwa = f"{imie} {nazwisko}"
-
-    # 2. MIEJSCOWOŚĆ (Szukamy w 3 miejscach)
-    miasto = dane.get('miejscowosc') or dane.get('adsiedzmiejscowosc') or dane.get('siedzibamiejscowosc') or ""
     
-    # 3. ULICA (Szukamy w 3 miejscach)
-    ulica = dane.get('ulica') or dane.get('adsiedzulica') or dane.get('siedzibaulica') or ""
-    
-    # 4. NUMERY DOMU/LOKALU
-    nr_domu = dane.get('nr_nieruchomosci') or dane.get('adsiedznrnieruchomosci') or ""
-    nr_lokalu = dane.get('nr_lokalu') or dane.get('adsiedznrlokalu') or ""
-    
-    # 5. KOD POCZTOWY
-    kod = dane.get('kod_pocztowy') or dane.get('adsiedzkodpocztowy') or ""
+    # 2. REGON (GUS dla JDG wrzuca go do 'regon9')
+    regon = dane.get('regon') or dane.get('regon9') or ""
 
-    # 6. WOJEWÓDZTWO
-    woj = dane.get('wojewodztwo') or dane.get('adsiedzwojewodztwo') or ""
+    # 3. MIEJSCOWOŚĆ
+    # Szukamy: standardowo LUB adsiedz... LUB siedziba...
+    miasto = (dane.get('miejscowosc') 
+              or dane.get('adsiedzmiejscowosc_nazwa') 
+              or dane.get('siedzibamiejscowosc_nazwa') 
+              or "")
+    
+    # 4. ULICA
+    ulica = (dane.get('ulica') 
+             or dane.get('adsiedzulica_nazwa') 
+             or dane.get('siedzibaulica_nazwa') 
+             or "")
+    
+    # 5. NUMERY
+    nr_domu = (dane.get('nr_nieruchomosci') 
+               or dane.get('adsiedznumernieruchomosci') 
+               or "")
+    
+    nr_lokalu = (dane.get('nr_lokalu') 
+                 or dane.get('adsiedznumerlokalu') 
+                 or "")
+    
+    # 6. KOD POCZTOWY
+    kod = (dane.get('kod_pocztowy') 
+           or dane.get('adsiedzkodpocztowy') 
+           or "")
 
-    # 7. REGON (Musi być)
-    regon = dane.get('regon') or ""
+    # 7. WOJEWÓDZTWO
+    woj = (dane.get('wojewodztwo') 
+           or dane.get('adsiedzwojewodztwo_nazwa') 
+           or "")
 
     return {
         'nazwa': nazwa,
@@ -80,10 +90,16 @@ def generuj_word(info, nip_raw):
     # Mocodawca
     doc.add_paragraph("\nMocodawca").runs[0].bold = True
     
-    # Budowanie adresu
+    # Budowanie adresu (Logika: czy ulica zawiera już "ul."?)
     adres_string = ""
-    if info['ulica']:
-        adres_string += f"ul. {info['ulica']} {info['nr_domu']}"
+    ulica_czysta = info['ulica']
+    
+    if ulica_czysta:
+        # Sprawdzamy czy GUS zwrócił już "ul. Rojna" czy samą "Rojna"
+        if "ul." in ulica_czysta.lower():
+            adres_string += f"{ulica_czysta} {info['nr_domu']}"
+        else:
+            adres_string += f"ul. {ulica_czysta} {info['nr_domu']}"
     else:
         adres_string += f"{info['nr_domu']}" # Wioska bez ulicy
         
@@ -93,7 +109,7 @@ def generuj_word(info, nip_raw):
     adres_string += f", {info['kod']} {info['miasto']}"
 
     # Wypisywanie danych w nagłówku
-    doc.add_paragraph(info['nazwa'].upper()) # Nazwa dużymi literami
+    doc.add_paragraph(info['nazwa'].upper()) 
     doc.add_paragraph(adres_string)
     doc.add_paragraph(f"NIP: {nip_raw}")
     doc.add_paragraph(f"REGON: {info['regon']}")
@@ -104,7 +120,7 @@ def generuj_word(info, nip_raw):
     tytul.runs[0].bold = True
     tytul.runs[0].font.size = Pt(14)
 
-    # Województwo - obsługa braku danych
+    # Województwo - obsługa odmiany
     woj_text = info['wojewodztwo'].lower()
     mapa_woj = {
         'łódzkie': 'Łódzkiego', 'mazowieckie': 'Mazowieckiego', 'wielkopolskie': 'Wielkopolskiego',
@@ -115,10 +131,11 @@ def generuj_word(info, nip_raw):
         'podlaskie': 'Podlaskiego', 'opolskie': 'Opolskiego', 'lubuskie': 'Lubuskiego'
     }
     
-    if woj_text:
-        urzad_wojewodztwo = mapa_woj.get(woj_text, woj_text.capitalize())
-    else:
-        urzad_wojewodztwo = "........................................"
+    # Próba dopasowania odmiany, jeśli nie ma - wstawia oryginał
+    urzad_wojewodztwo = mapa_woj.get(woj_text, woj_text.capitalize())
+    
+    if not urzad_wojewodztwo:
+         urzad_wojewodztwo = "........................................"
 
     # Treść
     tekst = (
@@ -127,72 +144,4 @@ def generuj_word(info, nip_raw):
         f"upoważniam Pana Pawła Bolimowskiego oraz Pana Patryka Kosteckiego do samodzielnej reprezentacji "
         f"{info['nazwa']} przed Urzędem Marszałkowskim Województwa {urzad_wojewodztwo} "
         f"w następujących sprawach załatwianych za pośrednictwem indywidualnego konta "
-        f"w Bazie danych o produktach i opakowaniach oraz o gospodarce odpadami (BDO):\n"
-    )
-    p_main = doc.add_paragraph(tekst)
-    p_main.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-
-    # Lista czynności
-    punkty = [
-        "złożenia wniosku o wpis do rejestru na wniosek zgodnie z art. 50 ustawy o odpadach;",
-        "wyznaczania upoważnionych użytkowników zgodnie z art. 79 ust. 7 ustawy o odpadach;",
-        "złożenia wniosku o zmianę wpisu w rejestrze zgodnie z art. 59 ustawy o odpadach;",
-        "złożenia wniosku o wykreślenie z rejestru zgodnie z art. 60 ustawy o odpadach;",
-        "prowadzenia ewidencji odpadów zgodnie z art. 66 i nast. ustawy o odpadach;",
-        "prowadzenia sprawozdawczości zgodnie z art. 73 i nast. ustawy o odpadach."
-    ]
-    for punkt in punkty:
-        p = doc.add_paragraph(f"- {punkt}")
-        p.paragraph_format.left_indent = Cm(1)
-
-    # Stopka
-    doc.add_paragraph(f"\nPełnomocnictwo ustanawia się od dnia {data_dzis} r. do odwołania.")
-    doc.add_paragraph(
-        "Odwołanie pełnomocnictwa nie powoduje unieważnienia czynności wykonanych przez upoważnioną osobę "
-        "ani konsekwencji tych czynności, jeżeli czynność miała miejsce przed poinformowaniem organu właściwego o cofnięciu pełnomocnictwa."
-    )
-    doc.add_paragraph("\n\n..................................................................")
-    doc.add_paragraph("(Czytelny podpis oraz pieczątka Mocodawcy)")
-
-    buffer = io.BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
-    return buffer
-
-# --- LOGIKA APLIKACJI ---
-nip_input = st.text_input("Podaj NIP (sam numer, bez kresek):", max_chars=10)
-
-if st.button("🔍 Znajdź firmę i generuj dokument"):
-    if not nip_input:
-        st.warning("Proszę wpisać NIP.")
-    else:
-        try:
-            gus = GUS(api_key=api_key)
-            dane_raw = gus.search(nip=nip_input)
-            
-            # DIAGNOSTYKA - Pokaż co widzi GUS (dla Ciebie, żebyś wiedział co się dzieje)
-            with st.expander("Kliknij tutaj, aby zobaczyć surowe dane z GUS (do sprawdzenia błędów)"):
-                st.write("To są dane, które otrzymujemy z urzędu:")
-                st.json(dane_raw)
-
-            # Inteligentne wyciąganie danych
-            info = wyciagnij_dane_smart(dane_raw)
-            
-            if not info['miasto']:
-                st.error("GUS zwrócił dane firmy, ale brakuje w nich adresu. Sprawdź sekcję 'surowe dane' powyżej.")
-            
-            st.success(f"Znaleziono: **{info['nazwa']}**")
-            
-            # Generowanie pliku
-            plik_word = generuj_word(info, nip_input)
-            
-            st.markdown("### 👇 Pobierz gotowy plik:")
-            st.download_button(
-                label="📥 POBIERZ PEŁNOMOCNICTWO (DOCX)",
-                data=plik_word,
-                file_name=f"Pelnomocnictwo_BDO_{nip_input}.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
-            
-        except Exception as e:
-            st.error(f"Wystąpił błąd. (Szczegóły: {e})")
+        f"w Bazie danych o produktach i opakowaniach oraz o gospodarce odpadami
