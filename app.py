@@ -23,7 +23,7 @@ except Exception as e:
 # --- INTELIGENTNE WYCIĄGANIE DANYCH ---
 def wyciagnij_dane_smart(dane):
     """
-    Funkcja mapuje dziwne nazwy pól z GUS (widoczne na zrzutach ekranu) na nasze standardowe.
+    Funkcja mapuje nazwy pól z GUS na podstawie Twoich zrzutów ekranu.
     """
     # 1. NAZWA
     nazwa = dane.get('nazwa', '')
@@ -32,35 +32,36 @@ def wyciagnij_dane_smart(dane):
     regon = dane.get('regon') or dane.get('regon9') or ""
 
     # 3. MIEJSCOWOŚĆ
-    # Szukamy: standardowo LUB adsiedz... LUB siedziba...
-    miasto = (dane.get('miejscowosc') 
-              or dane.get('adsiedzmiejscowosc_nazwa') 
+    # Priorytet: adsiedzmiejscowosc_nazwa (to widać u Ciebie w JSON)
+    miasto = (dane.get('adsiedzmiejscowosc_nazwa') 
               or dane.get('siedzibamiejscowosc_nazwa') 
+              or dane.get('miejscowosc') 
               or "")
     
     # 4. ULICA
-    ulica = (dane.get('ulica') 
-             or dane.get('adsiedzulica_nazwa') 
+    # Priorytet: adsiedzulica_nazwa (u Ciebie: "ul. Rojna")
+    ulica = (dane.get('adsiedzulica_nazwa') 
              or dane.get('siedzibaulica_nazwa') 
+             or dane.get('ulica') 
              or "")
     
     # 5. NUMERY
-    nr_domu = (dane.get('nr_nieruchomosci') 
-               or dane.get('adsiedznumernieruchomosci') 
+    nr_domu = (dane.get('adsiedznumernieruchomosci') 
+               or dane.get('nr_nieruchomosci') 
                or "")
     
-    nr_lokalu = (dane.get('nr_lokalu') 
-                 or dane.get('adsiedznumerlokalu') 
+    nr_lokalu = (dane.get('adsiedznumerlokalu') 
+                 or dane.get('nr_lokalu') 
                  or "")
     
     # 6. KOD POCZTOWY
-    kod = (dane.get('kod_pocztowy') 
-           or dane.get('adsiedzkodpocztowy') 
+    kod = (dane.get('adsiedzkodpocztowy') 
+           or dane.get('kod_pocztowy') 
            or "")
 
     # 7. WOJEWÓDZTWO
-    woj = (dane.get('wojewodztwo') 
-           or dane.get('adsiedzwojewodztwo_nazwa') 
+    woj = (dane.get('adsiedzwojewodztwo_nazwa') 
+           or dane.get('wojewodztwo') 
            or "")
 
     return {
@@ -90,16 +91,13 @@ def generuj_word(info, nip_raw):
     # Mocodawca
     doc.add_paragraph("\nMocodawca").runs[0].bold = True
     
-    # Budowanie adresu (Logika: czy ulica zawiera już "ul."?)
+    # Budowanie adresu
     adres_string = ""
     ulica_czysta = info['ulica']
     
     if ulica_czysta:
-        # Sprawdzamy czy GUS zwrócił już "ul. Rojna" czy samą "Rojna"
-        if "ul." in ulica_czysta.lower():
-            adres_string += f"{ulica_czysta} {info['nr_domu']}"
-        else:
-            adres_string += f"ul. {ulica_czysta} {info['nr_domu']}"
+        # Twoje dane mają już "ul." w nazwie (widzę to w JSON), więc nie dodajemy tego drugi raz
+        adres_string += f"{ulica_czysta} {info['nr_domu']}"
     else:
         adres_string += f"{info['nr_domu']}" # Wioska bez ulicy
         
@@ -112,36 +110,4 @@ def generuj_word(info, nip_raw):
     doc.add_paragraph(info['nazwa'].upper()) 
     doc.add_paragraph(adres_string)
     doc.add_paragraph(f"NIP: {nip_raw}")
-    doc.add_paragraph(f"REGON: {info['regon']}")
-
-    # Tytuł
-    tytul = doc.add_paragraph("\nPEŁNOMOCNICTWO")
-    tytul.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    tytul.runs[0].bold = True
-    tytul.runs[0].font.size = Pt(14)
-
-    # Województwo - obsługa odmiany
-    woj_text = info['wojewodztwo'].lower()
-    mapa_woj = {
-        'łódzkie': 'Łódzkiego', 'mazowieckie': 'Mazowieckiego', 'wielkopolskie': 'Wielkopolskiego',
-        'małopolskie': 'Małopolskiego', 'śląskie': 'Śląskiego', 'pomorskie': 'Pomorskiego',
-        'dolnośląskie': 'Dolnośląskiego', 'podkarpackie': 'Podkarpackiego', 'lubelskie': 'Lubelskiego',
-        'kujawsko-pomorskie': 'Kujawsko-Pomorskiego', 'zachodniopomorskie': 'Zachodniopomorskiego',
-        'warmińsko-mazurskie': 'Warmińsko-Mazurskiego', 'świętokrzyskie': 'Świętokrzyskiego',
-        'podlaskie': 'Podlaskiego', 'opolskie': 'Opolskiego', 'lubuskie': 'Lubuskiego'
-    }
-    
-    # Próba dopasowania odmiany, jeśli nie ma - wstawia oryginał
-    urzad_wojewodztwo = mapa_woj.get(woj_text, woj_text.capitalize())
-    
-    if not urzad_wojewodztwo:
-         urzad_wojewodztwo = "........................................"
-
-    # Treść
-    tekst = (
-        f"Działając w imieniu {info['nazwa']} z siedzibą w {info['miasto']}, "
-        f"{adres_string}, posiadając prawo reprezentacji tego podmiotu w zakresie ustanawiania pełnomocnictw, "
-        f"upoważniam Pana Pawła Bolimowskiego oraz Pana Patryka Kosteckiego do samodzielnej reprezentacji "
-        f"{info['nazwa']} przed Urzędem Marszałkowskim Województwa {urzad_wojewodztwo} "
-        f"w następujących sprawach załatwianych za pośrednictwem indywidualnego konta "
-        f"w Bazie danych o produktach i opakowaniach oraz o gospodarce odpadami
+    doc.add_
