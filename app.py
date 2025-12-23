@@ -15,7 +15,6 @@ st.info("Wpisz NIP klienta poniżej. System pobierze dane z GUS i wygeneruje got
 
 # --- POBIERANIE KLUCZA Z SEKRETÓW ---
 try:
-    # To polecenie pobiera klucz, który właśnie wpisałeś w zakładce Secrets
     api_key = st.secrets["GUS_KEY"]
 except Exception as e:
     st.error("⚠️ Błąd konfiguracji! Nie znaleziono klucza GUS_KEY w zakładce Secrets.")
@@ -23,6 +22,27 @@ except Exception as e:
 
 # --- INTERFEJS ---
 nip_input = st.text_input("Podaj NIP (sam numer, bez kresek):", max_chars=10)
+
+# --- FUNKCJA POMOCNICZA DO ADRESU ---
+def bezpieczny_adres(dane):
+    """Tworzy ładny string adresu niezależnie od tego, czy firma ma ulicę czy nie."""
+    ulica = dane.get('ulica', '') # Jeśli brak, wstaw pusty tekst
+    nr_domu = dane.get('nr_nieruchomosci', '')
+    nr_lokalu = dane.get('nr_lokalu', '')
+    kod = dane.get('kod_pocztowy', '')
+    miasto = dane.get('miejscowosc', '')
+    
+    adres_linia = ""
+    if ulica:
+        adres_linia += f"ul. {ulica} {nr_domu}"
+    else:
+        adres_linia += f"{nr_domu}" # Np. dla wsi bez ulic
+        
+    if nr_lokalu:
+        adres_linia += f"/{nr_lokalu}"
+        
+    adres_linia += f", {kod} {miasto}"
+    return adres_linia
 
 # --- FUNKCJA GENERUJĄCA DOKUMENT ---
 def generuj_word(dane, nip):
@@ -39,15 +59,15 @@ def generuj_word(dane, nip):
 
     # Mocodawca
     doc.add_paragraph("\nMocodawca").runs[0].bold = True
-    doc.add_paragraph(f"{dane['nazwa']}")
+    doc.add_paragraph(f"{dane.get('nazwa', 'Brak nazwy')}")
     
-    adres_caly = f"{dane['ulica']} {dane['nr_nieruchomosci']}"
-    if dane['nr_lokalu']: adres_caly += f"/{dane['nr_lokalu']}"
-    adres_caly += f", {dane['kod_pocztowy']} {dane['miejscowosc']}"
-    
+    # Budowanie adresu bezpieczną metodą
+    adres_caly = bezpieczny_adres(dane)
+    miejscowosc_firmy = dane.get('miejscowosc', '')
+
     doc.add_paragraph(adres_caly)
     doc.add_paragraph(f"NIP: {nip}")
-    doc.add_paragraph(f"REGON: {dane['regon']}")
+    doc.add_paragraph(f"REGON: {dane.get('regon', '')}")
 
     # Tytuł
     tytul = doc.add_paragraph("\nPEŁNOMOCNICTWO")
@@ -55,8 +75,8 @@ def generuj_word(dane, nip):
     tytul.runs[0].bold = True
     tytul.runs[0].font.size = Pt(14)
 
-    # Ustalanie województwa (odmiana gramatyczna - prosta)
-    woj_raw = dane['wojewodztwo'].lower()
+    # Ustalanie województwa
+    woj_raw = dane.get('wojewodztwo', '').lower()
     mapa_woj = {
         'łódzkie': 'Łódzkiego', 'mazowieckie': 'Mazowieckiego', 'wielkopolskie': 'Wielkopolskiego',
         'małopolskie': 'Małopolskiego', 'śląskie': 'Śląskiego', 'pomorskie': 'Pomorskiego',
@@ -65,21 +85,22 @@ def generuj_word(dane, nip):
         'warmińsko-mazurskie': 'Warmińsko-Mazurskiego', 'świętokrzyskie': 'Świętokrzyskiego',
         'podlaskie': 'Podlaskiego', 'opolskie': 'Opolskiego', 'lubuskie': 'Lubuskiego'
     }
-    urzad_wojewodztwo = mapa_woj.get(woj_raw, woj_raw.capitalize())
+    # Domyślnie puste, jeśli brak danych
+    urzad_wojewodztwo = mapa_woj.get(woj_raw, "....................") 
 
     # Treść główna
     tekst = (
-        f"Działając w imieniu {dane['nazwa']} z siedzibą w {dane['miejscowosc']}, "
+        f"Działając w imieniu {dane.get('nazwa', '')} z siedzibą w {miejscowosc_firmy}, "
         f"{adres_caly}, posiadając prawo reprezentacji tego podmiotu w zakresie ustanawiania pełnomocnictw, "
         f"upoważniam Pana Pawła Bolimowskiego oraz Pana Patryka Kosteckiego do samodzielnej reprezentacji "
-        f"{dane['nazwa']} przed Urzędem Marszałkowskim Województwa {urzad_wojewodztwo} "
+        f"{dane.get('nazwa', '')} przed Urzędem Marszałkowskim Województwa {urzad_wojewodztwo} "
         f"w następujących sprawach załatwianych za pośrednictwem indywidualnego konta "
         f"w Bazie danych o produktach i opakowaniach oraz o gospodarce odpadami (BDO):\n"
     )
     p_main = doc.add_paragraph(tekst)
     p_main.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
-    # Punkty (zakres czynności)
+    # Punkty
     punkty = [
         "złożenia wniosku o wpis do rejestru na wniosek zgodnie z art. 50 ustawy o odpadach;",
         "wyznaczania upoważnionych użytkowników zgodnie z art. 79 ust. 7 ustawy o odpadach;",
@@ -101,7 +122,6 @@ def generuj_word(dane, nip):
     doc.add_paragraph("\n\n..................................................................")
     doc.add_paragraph("(Czytelny podpis oraz pieczątka Mocodawcy)")
 
-    # Zapis do pamięci
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
@@ -117,8 +137,7 @@ if st.button("🔍 Znajdź firmę i generuj dokument"):
             gus = GUS(api_key=api_key)
             dane_firmy = gus.search(nip=nip_input)
             
-            st.success(f"Znaleziono firmę: {dane_firmy['nazwa']}")
-            st.caption(f"Adres: {dane_firmy['ulica']} {dane_firmy['nr_nieruchomosci']}, {dane_firmy['miejscowosc']}")
+            st.success(f"Znaleziono firmę: {dane_firmy.get('nazwa', 'Nazwa niedostępna')}")
             
             # Generowanie pliku
             plik_word = generuj_word(dane_firmy, nip_input)
@@ -132,8 +151,4 @@ if st.button("🔍 Znajdź firmę i generuj dokument"):
             )
             
         except Exception as e:
-            st.error(f"Wystąpił błąd. Sprawdź poprawność NIP. (Komunikat: {e})")
-            st.info("Pamiętaj: Wydrukuj, podpisz i odeślij skan do nas!")
-            
-        except Exception as e:
-            st.error(f"Nie znaleziono firmy lub błąd GUS. Sprawdź NIP. ({e})")
+            st.error(f"Wystąpił błąd. (Szczegóły: {e})")
