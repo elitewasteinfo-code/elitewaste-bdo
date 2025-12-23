@@ -3,7 +3,7 @@ from gusregon import GUS
 from docx import Document
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from datetime import date
+from datetime import datetime, timedelta, timezone
 import io
 
 # --- KONFIGURACJA STRONY ---
@@ -20,7 +20,7 @@ except Exception as e:
     st.error("⚠️ Błąd konfiguracji! Nie znaleziono klucza GUS_KEY w zakładce Secrets.")
     st.stop()
 
-# --- INTELIGENTNE WYCIĄGANIE DANYCH (Poprawione pod Twoje zrzuty) ---
+# --- INTELIGENTNE WYCIĄGANIE DANYCH ---
 def wyciagnij_dane_smart(dane):
     """
     Funkcja mapuje nazwy pól z GUS na podstawie Twoich zrzutów ekranu.
@@ -28,18 +28,16 @@ def wyciagnij_dane_smart(dane):
     # 1. NAZWA
     nazwa = dane.get('nazwa', '')
     
-    # 2. REGON (GUS dla JDG wrzuca go do 'regon9' - widoczne na zrzucie)
+    # 2. REGON (GUS dla JDG wrzuca go do 'regon9')
     regon = dane.get('regon') or dane.get('regon9') or ""
 
     # 3. MIEJSCOWOŚĆ
-    # Priorytet: adsiedzmiejscowosc_nazwa (to widać u Ciebie w JSON)
     miasto = (dane.get('adsiedzmiejscowosc_nazwa') 
               or dane.get('siedzibamiejscowosc_nazwa') 
               or dane.get('miejscowosc') 
               or "")
     
     # 4. ULICA
-    # Priorytet: adsiedzulica_nazwa (u Ciebie: "ul. Rojna")
     ulica = (dane.get('adsiedzulica_nazwa') 
              or dane.get('siedzibaulica_nazwa') 
              or dane.get('ulica') 
@@ -58,7 +56,7 @@ def wyciagnij_dane_smart(dane):
     kod = (dane.get('adsiedzkodpocztowy') 
            or dane.get('kod_pocztowy') 
            or "")
-    # Formatowanie kodu (dodanie myślnika jeśli go nie ma, np. 91134 -> 91-134)
+    # Formatowanie kodu (dodanie myślnika jeśli go nie ma)
     if kod and len(kod) == 5 and '-' not in kod:
         kod = f"{kod[:2]}-{kod[2:]}"
 
@@ -85,7 +83,9 @@ def generuj_word(info, nip_raw):
     style.font.name = 'Times New Roman'
     style.font.size = Pt(11)
 
-    data_dzis = date.today().strftime("%d.%m.%Y")
+    # NAPRAWA CZASU: Wymuszenie strefy czasowej UTC+1 (Polska Zima)
+    strefa_pl = timezone(timedelta(hours=1))
+    data_dzis = datetime.now(strefa_pl).strftime("%d.%m.%Y")
 
     # Data
     p = doc.add_paragraph(f"Łódź, dnia {data_dzis} r.")
@@ -99,20 +99,19 @@ def generuj_word(info, nip_raw):
     ulica_czysta = info['ulica']
     
     if ulica_czysta:
-        # Twoje dane mają już "ul." w nazwie (widzę to w JSON), więc nie dodajemy tego drugi raz
         if "ul." in ulica_czysta.lower():
              adres_string += f"{ulica_czysta} {info['nr_domu']}"
         else:
              adres_string += f"ul. {ulica_czysta} {info['nr_domu']}"
     else:
-        adres_string += f"{info['nr_domu']}" # Wioska bez ulicy
+        adres_string += f"{info['nr_domu']}"
         
     if info['nr_lokalu']:
         adres_string += f"/{info['nr_lokalu']}"
     
     adres_string += f", {info['kod']} {info['miasto']}"
 
-    # Wypisywanie danych w nagłówku
+    # Nagłówek danych firmy
     doc.add_paragraph(info['nazwa'].upper()) 
     doc.add_paragraph(adres_string)
     doc.add_paragraph(f"NIP: {nip_raw}")
@@ -139,12 +138,11 @@ def generuj_word(info, nip_raw):
     if not urzad_wojewodztwo:
          urzad_wojewodztwo = "........................................"
 
-    # Treść (Naprawiony błąd składni)
+    # Treść
     czesc_1 = f"Działając w imieniu {info['nazwa']} z siedzibą w {info['miasto']}, {adres_string}, posiadając prawo reprezentacji tego podmiotu w zakresie ustanawiania pełnomocnictw, upoważniam Pana Pawła Bolimowskiego oraz Pana Patryka Kosteckiego do samodzielnej reprezentacji "
     czesc_2 = f"{info['nazwa']} przed Urzędem Marszałkowskim Województwa {urzad_wojewodztwo} w następujących sprawach załatwianych za pośrednictwem indywidualnego konta w Bazie danych o produktach i opakowaniach oraz o gospodarce odpadami (BDO):\n"
     
     tekst = czesc_1 + czesc_2
-    
     p_main = doc.add_paragraph(tekst)
     p_main.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
@@ -186,7 +184,7 @@ if st.button("🔍 Znajdź firmę i generuj dokument"):
             gus = GUS(api_key=api_key)
             dane_raw = gus.search(nip=nip_input)
             
-            # Inteligentne wyciąganie danych (poprawione pod Twoje JSON)
+            # Inteligentne wyciąganie danych
             info = wyciagnij_dane_smart(dane_raw)
             
             if not info['miasto']:
