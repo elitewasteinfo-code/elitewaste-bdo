@@ -1,0 +1,16 @@
+name: Wake up Streamlit
+
+on:
+  schedule:
+    # Uruchamiaj co 30 minut (*/30 oznacza "każdą 30 minutę godziny")
+    - cron: '*/30 * * * *'
+  # Pozwala też uruchomić ręcznie przyciskiem w razie potrzeby
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping App
+        # Poniżej wklej SWÓJ link do aplikacji zamiast tego przykładowego
+        run: curl -I https://generator-pelnomocnictw-elite-waste.streamlit.app/
