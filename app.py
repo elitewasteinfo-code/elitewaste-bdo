@@ -1,4 +1,16 @@
-import streamlit as st
+st.set_page_config(page_title="Elite Waste System", page_icon="nowe logo.png")
+
+# Ten kod ukrywa pasek Streamlit i stopkę, żeby wyglądało jak "Twoja" strona
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+st.image("nowe logo.png", width=300)import streamlit as st
 from gusregon import GUS
 from docx import Document
 from docx.shared import Pt, Cm
