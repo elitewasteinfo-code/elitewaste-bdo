@@ -1,16 +1,4 @@
-st.set_page_config(page_title="Elite Waste System", page_icon="nowe logo.png")
-
-# Ten kod ukrywa pasek Streamlit i stopkę, żeby wyglądało jak "Twoja" strona
-hide_streamlit_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            header {visibility: hidden;}
-            </style>
-            """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-
-st.image("nowe logo.png", width=300)import streamlit as st
+import streamlit as st
 from gusregon import GUS
 from docx import Document
 from docx.shared import Pt, Cm
@@ -18,21 +6,38 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from datetime import datetime, timedelta, timezone
 import io
 
-# --- KONFIGURACJA STRONY ---
-st.set_page_config(page_title="Generator BDO - Elite Waste", page_icon="♻️")
+# --- 1. KONFIGURACJA STRONY (Musi być pierwsza) ---
+st.set_page_config(page_title="Elite Waste System", page_icon="Nowe Logo.png")
+
+# --- 2. UKRYWANIE ELEMENTÓW STREAMLIT (Stylizacja) ---
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            [data-testid="stToolbar"] {visibility: hidden !important;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+# --- 3. LOGO I NAGŁÓWEK ---
+try:
+    st.image("Nowe Logo.png", width=300)
+except Exception:
+    st.warning("⚠️ Nie znaleziono pliku 'Nowe Logo.png'. Upewnij się, że plik jest wgranym na GitHub.")
 
 st.title("♻️ Generator Pełnomocnictw BDO")
 st.markdown("### Elite Waste")
 st.info("Wpisz NIP klienta poniżej. System obsługuje zarówno spółki (KRS) jak i JDG (CEIDG).")
 
-# --- POBIERANIE KLUCZA ---
+# --- 4. POBIERANIE KLUCZA ---
 try:
     api_key = st.secrets["GUS_KEY"]
 except Exception as e:
     st.error("⚠️ Błąd konfiguracji! Nie znaleziono klucza GUS_KEY w zakładce Secrets.")
     st.stop()
 
-# --- INTELIGENTNE WYCIĄGANIE DANYCH ---
+# --- 5. INTELIGENTNE WYCIĄGANIE DANYCH ---
 def wyciagnij_dane_smart(dane):
     """
     Funkcja mapuje nazwy pól z GUS na podstawie Twoich zrzutów ekranu.
@@ -88,7 +93,7 @@ def wyciagnij_dane_smart(dane):
         'regon': regon
     }
 
-# --- GENERATOR DOKUMENTU ---
+# --- 6. GENERATOR DOKUMENTU ---
 def generuj_word(info, nip_raw):
     doc = Document()
     style = doc.styles['Normal']
@@ -185,7 +190,7 @@ def generuj_word(info, nip_raw):
     buffer.seek(0)
     return buffer
 
-# --- LOGIKA APLIKACJI ---
+# --- 7. LOGIKA APLIKACJI ---
 nip_input = st.text_input("Podaj NIP (sam numer, bez kresek):", max_chars=10)
 
 if st.button("🔍 Znajdź firmę i generuj dokument"):
